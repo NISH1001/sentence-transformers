@@ -62,7 +62,7 @@ class SentenceTransformer(torch.nn.Module):
 
         token_embeddings = outputs.last_hidden_state
         sentence_embeddings = self.pooling(token_embeddings, inputs["attention_mask"])
-        return (token_embeddings, sentence_embeddings)
+        return (inputs, token_embeddings, sentence_embeddings)
 
     @property
     def hidden_size(self) -> int:
@@ -85,8 +85,9 @@ class MultiTaskFormer(SentenceTransformer):
         self.heads = heads
 
     def forward(self, texts: Union[str, List[str]]) -> Dict[str, torch.Tensor]:
-        # We use the _encocde instead of encode to access both the sentence and token embeddings
-        token_embeddings, sentence_embeddings = self._encode(texts)
+        # use the _encocde instead of encode to access both the sentence and token embeddings
+        inputs, token_embeddings, sentence_embeddings = self._encode(texts)
+
         outputs = {}
         for i, head in enumerate(self.heads):
             logits = torch.Tensor([])
@@ -96,7 +97,10 @@ class MultiTaskFormer(SentenceTransformer):
                 else:
                     logits = head(sentence_embeddings)
             outputs[f"head_{i}"] = dict(
-                logits=logits, predicted_labels=head._logits_to_labels(logits)
+                logits=logits,
+                predicted_labels=head._logits_to_labels(
+                    logits, attention_mask=inputs["attention_mask"]
+                ),
             )
         return outputs
 

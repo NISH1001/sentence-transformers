@@ -33,7 +33,10 @@ class ClassificationHead(NetworkHead):
         return self.fc(embeddings)
 
     def _logits_to_labels(
-        self, logits: torch.Tensor, threshold: float = 0.5
+        self,
+        logits: torch.Tensor,
+        threshold: float = 0.5,
+        **kwargs,
     ) -> List[List[str]]:
         res = []
         if self.multi_label:
@@ -61,7 +64,7 @@ class NERHead(ClassificationHead):
         input_dim: int,
         num_tags: int,
         ner_tags: Optional[Tuple[str]] = None,
-        multi_label: bool = True,
+        multi_label: bool = False,
     ):
         super(NERHead, self).__init__(
             input_dim=input_dim,
@@ -70,36 +73,23 @@ class NERHead(ClassificationHead):
             multi_label=multi_label,
         )
 
+    @property
+    def ner_tags(self) -> List[str]:
+        return self.labels
+
     def _logits_to_labels(
-        self, logits: torch.Tensor, threshold: float = 0.5
-    ) -> List[List[List[str]]]:
+        self, logits: torch.Tensor, attention_mask: torch.Tensor, **kwargs
+    ) -> List[List[str]]:
         res = []
-        # if single token could potentially have multiple entities (probably not realistic)
-        if self.multi_label:
-            probabilities = torch.sigmoid(logits)
-            predicted_indices = probabilities >= threshold
+        probabilities = torch.softmax(logits, dim=-1)
+        predicted_indices = torch.argmax(probabilities, dim=-1)
 
-            for batch_idx in predicted_indices:
-                batch_labels = []
-                for token_idx in batch_idx:
-                    # active labels for the current token
-                    active_labels = [
-                        self.labels[label_idx]
-                        for label_idx in range(token_idx.size(0))
-                        if token_idx[label_idx].item()
-                    ]
-                    batch_labels.append(active_labels)
-                res.append(batch_labels)
-        else:
-            probabilities = torch.softmax(logits, dim=-1)
-            predicted_indices = torch.argmax(probabilities, dim=-1)
-
-            for batch_idx in predicted_indices:
-                batch_labels = []
-                # just map each token to individual label
-                for token_idx in batch_idx:
-                    batch_labels.append(self.labels[token_idx.item()])
-                res.append(batch_labels)
+        for batch_idx, mask in zip(predicted_indices, attention_mask):
+            sentence_length = mask.sum().item()
+            batch_labels = [
+                self.ner_tags[idx.item()] for idx in batch_idx[:sentence_length]
+            ]
+            res.append(batch_labels)
         return res
 
 
