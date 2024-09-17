@@ -86,6 +86,7 @@ class NERHead(ClassificationHead):
 
         for batch_idx, mask in zip(predicted_indices, attention_mask):
             sentence_length = mask.sum().item()
+            # ignore padding tokens
             batch_labels = [
                 self.ner_tags[idx.item()] for idx in batch_idx[:sentence_length]
             ]
